@@ -1,2 +1,2 @@
 # node-rules-engine
-Forward-chaining Rules Engine
+Sandboxed, Promise-based Forward-chaining Rules Engine.

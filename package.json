@@ -1,0 +1,17 @@
+{
+  "name": "node-rules-engine",
+  "version": "0.0.1",
+  "description": "Sandboxed, Promise-based Forward-chaining Rules Engine",
+  "main": "index.js",
+  "repository": "git@github.com:mdbarr/node-rules-engine.git",
+  "author": "Mark Barr <mark@hyperingenuity.com>",
+  "license": "MIT",
+  "private": false,
+  "devDependencies": {
+    "eslint": "^4.10.0"
+  },
+  "scripts": {
+    "fix": "./node_modules/.bin/eslint --fix **/*.js *.js || exit 0",
+    "lint": "./node_modules/.bin/eslint **/*.js *.js || exit 0"
+  }
+}
