@@ -6,11 +6,11 @@ function RulesEngine(config, rules) {
   const self = this;
 
   self.config = {
+    defaultPriority: 100,
     ignoreModifications: false
   };
-  Object.assign(self.config, config || {});
 
-  self.rules = clone(rules);
+  Object.assign(self.config, config || {});
 
   //////////////////////////////////////////////////
 
@@ -27,6 +27,35 @@ function RulesEngine(config, rules) {
   function clone(object) {
     return JSON.parse(stringify(object));
   }
+
+  //////////////////////////////////////////////////
+
+  function configureRules() {
+    self.rules = clone(rules);
+
+    self.rules = self.rules.filter(function(rule) {
+      if (rule.enabled !== undefined && !rule.enabled) {
+        return false;
+      }
+
+      if (!rule.when || !rule.then) {
+        return false;
+      }
+
+      return true;
+    });
+
+    self.rules.forEach(function (rule, index) {
+      rule.name = rule.name || `rule-${ index }`;
+      rule.priority = rule.priority || config.defaultPriority;
+    });
+
+    self.rules.sort((a, b) => a.priority - b.priority);
+  }
+
+  configureRules();
+
+  //////////////////////////////////////////////////
 
   function proxyObject(object, context, seen) {
     if (seen && seen.has(object)) {
@@ -118,8 +147,9 @@ function RulesEngine(config, rules) {
 
   self.execute = function(fact, initialResult) {
     const context = {
-      modified: 0,
+      modified: false,
       result: initializeResult(initialResult),
+      sequence: [ ],
       stop: false
     };
 
@@ -148,7 +178,6 @@ function RulesEngine(config, rules) {
 
       const environment = {
         rule: rule,
-        rules: self.rules,
         stop: () => context.stop = true,
         next: () => {},
         fact: fact,
@@ -175,6 +204,7 @@ function RulesEngine(config, rules) {
       return evaluateConditional(rule, sandbox).
         then(function(when) {
           if (when) {
+            context.sequence.push(rule.name);
             return evaluateConsequence(rule, sandbox);
           }
           return true;
@@ -205,7 +235,8 @@ function RulesEngine(config, rules) {
       then(function(final) {
         return {
           fact: final,
-          result: context.result
+          result: context.result,
+          sequence: context.sequence
         };
       }).
       catch(function(error) {
