@@ -1,9 +1,13 @@
 'use strict';
 
 const vm = require('vm');
+const track = require('./lib/track');
+const deepClone = require('./lib/deep-clone');
 
 function RulesEngine(config, rules) {
   const self = this;
+
+  const INITIAL_RULE_INDEX = 0;
 
   self.config = {
     defaultPriority: 100,
@@ -14,24 +18,8 @@ function RulesEngine(config, rules) {
 
   //////////////////////////////////////////////////
 
-  function stringify(object) {
-    return JSON.stringify(object, function(key, value) {
-      if (typeof value === 'function') {
-        value = value.toString();
-        value = `(${ value })();`;
-      }
-      return value;
-    }, 2);
-  }
-
-  function clone(object) {
-    return JSON.parse(stringify(object));
-  }
-
-  //////////////////////////////////////////////////
-
   function configureRules() {
-    self.rules = clone(rules);
+    self.rules = deepClone(rules);
 
     self.rules = self.rules.filter(function(rule) {
       if (rule.enabled !== undefined && !rule.enabled) {
@@ -47,6 +35,15 @@ function RulesEngine(config, rules) {
 
     self.rules.forEach(function (rule, index) {
       rule.name = rule.name || `rule-${ index }`;
+
+      if (typeof rule.when === 'function') {
+        rule.when = `(${ rule.when.toString() })();`;
+      }
+
+      if (typeof rule.then === 'function') {
+        rule.then = `(${ rule.then.toString() })();`;
+      }
+
       rule.priority = rule.priority || config.defaultPriority;
     });
 
@@ -57,40 +54,9 @@ function RulesEngine(config, rules) {
 
   //////////////////////////////////////////////////
 
-  function proxyObject(object, context, seen) {
-    if (seen && seen.has(object)) {
-      return object;
-    }
-
-    return new Proxy(object, {
-      set (target, key, value) {
-        if (typeof value === 'object') {
-          value = proxyObject(value, context, seen);
-        }
-        if (target[key] !== value) {
-          target[key] = value;
-          context.modified = true;
-        }
-        return true;
-      },
-      deleteProperty(target, property) {
-        context.modified = true;
-        delete target[property];
-        return true;
-      }
-    });
-  }
-
-  function cloneFact(fact, context, seen) {
-    seen = seen || new Set();
-    fact = clone(fact);
-
-    for (const property in fact) {
-      if (typeof property === 'object') {
-        fact[property] = proxyObject(fact[property], context, seen);
-      }
-    }
-    return proxyObject(fact, context, seen);
+  function cloneFact(fact, context) {
+    fact = deepClone(fact);
+    return track(fact, context);
   }
 
   //////////////////////////////////////////////////
@@ -153,6 +119,9 @@ function RulesEngine(config, rules) {
       stop: false
     };
 
+    fact = cloneFact(fact, context);
+    context.modified = false;
+
     function evaluateConditional(rule, sandbox) {
       return new Promise(function(resolve) {
         const when = vm.runInContext(rule.when, sandbox);
@@ -168,8 +137,6 @@ function RulesEngine(config, rules) {
     }
 
     function ruleExecutor(index) {
-      fact = cloneFact(fact, context);
-
       if (index >= rules.length) {
         return Promise.resolve(fact);
       }
@@ -231,10 +198,10 @@ function RulesEngine(config, rules) {
         });
     }
 
-    return executeLoop(0).
+    return executeLoop(INITIAL_RULE_INDEX).
       then(function(final) {
         return {
-          fact: final,
+          fact: track.untrack(final),
           result: context.result,
           sequence: context.sequence
         };
@@ -246,7 +213,7 @@ function RulesEngine(config, rules) {
 
   self.execute.chain = function(facts, initialResult) {
     if (!Array.isArray(facts)) {
-      return self.execute(fact);
+      return self.execute(facts);
     }
 
     const results = [ ];
