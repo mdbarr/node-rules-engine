@@ -216,7 +216,13 @@ function RulesEngine(config, rules) {
       return self.execute(facts);
     }
 
-    const results = [ ];
+    const results = {
+      facts: [],
+      sequences: []
+    };
+    if (!initialResult) {
+      results.results = [];
+    }
 
     let chain = Promise.resolve();
     facts.forEach(function(fact) {
@@ -226,7 +232,13 @@ function RulesEngine(config, rules) {
             if (initialResult !== undefined) {
               initialResult = result.result;
             }
-            results.push(result);
+            results.facts.push(result.fact);
+            results.sequences.push(result.sequence);
+            if (initialResult) {
+              results.result = result.result;
+            } else {
+              results.results.push(result.result);
+            }
           });
       });
     });
