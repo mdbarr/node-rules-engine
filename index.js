@@ -11,7 +11,8 @@ function RulesEngine(config, rules) {
 
   self.config = {
     defaultPriority: 100,
-    ignoreModifications: false
+    ignoreModifications: false,
+    environment: {}
   };
 
   Object.assign(self.config, config || {});
@@ -143,13 +144,16 @@ function RulesEngine(config, rules) {
 
       const rule = self.rules[index];
 
-      const environment = {
+      const environment = {};
+
+      Object.assign(environment, self.config.environment);
+      Object.assign(environment, {
         rule: rule,
         stop: () => context.stop = true,
         next: () => {},
         fact: fact,
         result: context.result
-      };
+      });
 
       Object.defineProperty(environment, 'result', {
         get: function() {
