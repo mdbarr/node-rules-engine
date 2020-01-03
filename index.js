@@ -1,257 +1,189 @@
 'use strict';
 
 const vm = require('vm');
-const track = require('./lib/track');
-const deepClone = require('./lib/deep-clone');
 
-function RulesEngine(config, rules) {
-  const self = this;
+//////////
 
-  const INITIAL_RULE_INDEX = 0;
+function clone (object, seen = new WeakMap()) {
+  if (Object(object) !== object || object instanceof Function) {
+    return object;
+  }
 
-  self.config = {
-    defaultPriority: 100,
-    ignoreModifications: false,
-    environment: {}
-  };
+  if (seen.has(object)) {
+    return seen.get(object);
+  }
 
-  Object.assign(self.config, config || {});
+  let result;
+  if (object instanceof Buffer) {
+    result = Buffer.from(object);
+  } else if (object instanceof Date) {
+    result = new Date(object);
+  } else if (object instanceof RegExp) {
+    result = new RegExp(object.source, object.flags);
+  } else if (object.constructor) {
+    result = new object.constructor();
+  } else {
+    result = Object.create(null);
+  }
 
-  //////////////////////////////////////////////////
+  seen.set(object, result);
 
-  function configureRules() {
-    self.rules = deepClone(rules);
+  if (object instanceof Buffer) {
+    return result;
+  } else if (object instanceof Map) {
+    object.forEach((value, key) => { return result.set(key, clone(value, seen)); });
+  } else if (object instanceof Set) {
+    object.forEach(value => { return result.add(clone(value, seen)); });
+  } else {
+    for (const key in object) {
+      result[key] = clone(object[key], seen);
+    }
+  }
 
-    self.rules = self.rules.filter(function(rule) {
-      if (rule.enabled !== undefined && !rule.enabled) {
+  return result;
+}
+
+//////////
+
+const defaults = {
+  asValue: false,
+  environment: {},
+  ignoreModifications: false,
+  priority: 100,
+  result: null
+};
+
+class RulesEngine {
+  constructor (rules, options = {}) {
+    this.config = Object.assign({}, defaults, options);
+
+    this.rules = rules.filter((item) => {
+      if (item.enabled !== undefined && item.enabled !== true) {
         return false;
       }
 
-      if (!rule.when || !rule.then) {
+      if (!item.when || !item.then) {
         return false;
       }
 
       return true;
-    });
-
-    self.rules.forEach(function (rule, index) {
-      rule.name = rule.name || `rule-${ index }`;
-
-      if (typeof rule.when === 'function') {
-        rule.when = `(${ rule.when.toString() })();`;
-      }
-
-      if (typeof rule.then === 'function') {
-        rule.then = `(${ rule.then.toString() })();`;
-      }
-
-      rule.priority = rule.priority || config.defaultPriority;
-    });
-
-    self.rules.sort((a, b) => a.priority - b.priority);
+    }).map((item, index) => {
+      return {
+        name: item.name || `rule-${ index }`,
+        when: typeof item.when === 'function' ? `(${ item.when.toString() })();` : item.when,
+        then: typeof item.then === 'function' ? `(${ item.then.toString() })();` : item.then,
+        priority: item.priority !== undefined ? item.priority : this.config.priority
+      };
+    }).
+      sort((a, b) => { return a.priority - b.priority; });
   }
 
-  configureRules();
-
-  //////////////////////////////////////////////////
-
-  function cloneFact(fact, context) {
-    fact = deepClone(fact);
-    return track(fact, context);
-  }
-
-  //////////////////////////////////////////////////
-
-  function initializeResult(initial) {
-    if (self.config.resultAsArray) {
-      if (Array.isArray(initial)) {
-        return initial.slice();
-      } else {
-        return [];
-      }
-    } else if (self.config.resultAsMap) {
-      if (initial instanceof Map) {
-        return new Map(initial);
-      } else {
-        return new Map();
-      }
-    } else if (self.config.resultAsSet) {
-      if (initial instanceof Set) {
-        return new Set(initial);
-      } else {
-        return new Set();
-      }
-    } else if (self.config.resultAsValue) {
-      return initial;
-    }
-
-    const result = {
-      value: undefined,
-      array: [],
-      set: new Set(),
-      map: new Map()
-    };
-
-    if (initial !== undefined) {
-      if (typeof initial === 'object') {
-        if (initial instanceof Set) {
-          result.set = new Set(initial);
-        } else if (initial instanceof Map) {
-          result.map = new Map(initial);
-        } else if (initial instanceof Array) {
-          result.array = initial.slice();
-        } else {
-          Object.assign(result, initial);
+  watch (object, context) {
+    return new Proxy(object, {
+      deleteProperty: (obj, prop) => {
+        if (prop in obj) {
+          context.modified = true;
+          delete obj[prop];
         }
-      } else {
-        result.value = initial;
+      },
+      get: (obj, prop) => {
+        if (prop in obj && typeof obj[prop] === 'object') {
+          return this.watch(obj[prop], context);
+        } else if (typeof obj[prop] === 'function') {
+          if (prop === 'add' && object instanceof Set) {
+            return function (value) {
+              if (!object.has(value)) {
+                context.modified = true;
+              }
+              return object.add(value);
+            };
+          } else if (prop === 'clear' && (object instanceof Map || object instanceof Set)) {
+            return function () {
+              if (object.size) {
+                context.modified = true;
+              }
+              return object.clear();
+            };
+          } else if (prop === 'delete' && (object instanceof Map || object instanceof Set)) {
+            return function (value) {
+              if (object.has(value)) {
+                context.modified = true;
+              }
+              return object.delete(value);
+            };
+          } else if (prop === 'set' && object instanceof Map) {
+            return function (key, value) {
+              if (object.get(key) !== value) {
+                context.modified = true;
+              }
+              return object.set(key, value);
+            };
+          }
+
+          return obj[prop].bind(object);
+        }
+        return obj[prop];
+      },
+      set: (obj, prop, value) => {
+        if (obj[prop] !== value) {
+          context.modified = true;
+        }
+
+        obj[prop] = value;
+        return value;
       }
-    }
-    return result;
+    });
   }
 
-  //////////////////////////////////////////////////
+  execute (facts) {
+    facts = clone(facts);
 
-  self.execute = function(fact, initialResult) {
-    const context = {
-      modified: false,
-      result: initializeResult(initialResult),
-      sequence: [ ],
-      stop: false
-    };
-
-    fact = cloneFact(fact, context);
-    context.modified = false;
-
-    function evaluateConditional(rule, sandbox) {
-      return new Promise(function(resolve) {
-        const when = vm.runInContext(rule.when, sandbox);
-        return resolve(when);
-      });
+    let result = this.config.result;
+    if (typeof result === 'function') {
+      const Constructor = result;
+      result = new Constructor();
     }
 
-    function evaluateConsequence(rule, sandbox) {
-      return new Promise(function(resolve) {
-        const then = vm.runInContext(rule.then, sandbox);
-        return resolve(then);
-      });
-    }
+    const sequence = [];
 
-    function ruleExecutor(index) {
-      if (index >= rules.length) {
-        return Promise.resolve(fact);
-      }
+    for (let i = 0; i < this.rules.length;) {
+      const rule = this.rules[i];
+      const context = {};
 
-      const rule = self.rules[index];
-
-      const environment = {};
-
-      Object.assign(environment, self.config.environment);
-      Object.assign(environment, {
-        rule: rule,
-        stop: () => context.stop = true,
-        next: () => {},
-        fact: fact,
-        result: context.result
-      });
-
-      Object.defineProperty(environment, 'result', {
-        get: function() {
-          return context.result;
-        },
-        set: function(y) {
-          if (typeof context.result === 'object') {
-            context.result.value = y;
-          } else {
-            context.result = y;
-          }
-        },
-        configurable: false,
-        enumerable: true
-      });
+      const environment = {
+        rule,
+        stop: () => { context.stop = true; },
+        facts: this.watch(facts, context),
+        result,
+        ...this.config.environment
+      };
 
       const sandbox = vm.createContext(environment);
 
-      return evaluateConditional(rule, sandbox).
-        then(function(when) {
-          if (when) {
-            context.sequence.push(rule.name);
-            return evaluateConsequence(rule, sandbox);
-          }
-          return true;
-        });
+      if (vm.runInContext(rule.when, sandbox)) {
+        sequence.push(rule.name);
+
+        vm.runInContext(rule.then, sandbox);
+        result = sandbox.result;
+      }
+
+      if (context.stop) {
+        break;
+      }
+
+      i = context.modified && !this.config.ignoreModifications ? 0 : i + 1;
     }
 
-    function executeLoop(index) {
-      return ruleExecutor(index).
-        then(function() {
-          if (context.stop) {
-            return fact;
-          } else if (context.modified && !self.config.ignoreModifications) {
-            context.modified = false;
-            index = 0;
-          } else {
-            index++;
-          }
-
-          if (index >= self.rules.length) {
-            return fact;
-          } else {
-            return executeLoop(index);
-          }
-        });
-    }
-
-    return executeLoop(INITIAL_RULE_INDEX).
-      then(function(final) {
-        return {
-          fact: track.untrack(final),
-          result: context.result,
-          sequence: context.sequence
-        };
-      }).
-      catch(function(error) {
-        console.log('Error processing fact', error);
-      });
-  };
-
-  self.execute.chain = function(facts, initialResult) {
-    if (!Array.isArray(facts)) {
-      return self.execute(facts);
-    }
-
-    const results = {
-      facts: [],
-      sequences: []
+    return this.config.asValue ? result : {
+      result,
+      sequence,
+      facts
     };
-    if (!initialResult) {
-      results.results = [];
-    }
+  }
 
-    let chain = Promise.resolve();
-    facts.forEach(function(fact) {
-      chain = chain.then(function() {
-        return self.execute(fact, initialResult).
-          then(function(result) {
-            if (initialResult !== undefined) {
-              initialResult = result.result;
-            }
-            results.facts.push(result.fact);
-            results.sequences.push(result.sequence);
-            if (initialResult) {
-              results.result = result.result;
-            } else {
-              results.results.push(result.result);
-            }
-          });
-      });
-    });
-    return chain.then(function() {
-      return results;
-    });
-  };
-
-  return self;
+  chain (list) {
+    return list.map(facts => { return this.execute(facts); });
+  }
 }
 
 module.exports = RulesEngine;

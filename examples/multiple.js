@@ -2,43 +2,35 @@
 
 const RulesEngine = require('../index');
 
-const config = {
-  ignoreModifications: false,
-  resultAsValue: true
-};
-
-const fact = {
+const facts = {
   a: 10,
   b: 10,
   c: 10
 };
 
 const rules = [ {
-  when: function() {
-    return fact.a === fact.b;
+  when () {
+    return facts.a === facts.b;
   },
-  then: function() {
-    fact.aAndB = true;
+  then () {
+    facts.aAndB = true;
   }
 }, {
-  when: function() {
-    return fact.a === fact.c;
+  when () {
+    return facts.a === facts.c;
   },
-  then: function() {
-    fact.aAndC = true;
+  then () {
+    facts.aAndC = true;
   }
 }, {
-  when: function() {
-    return fact.aAndB && fact.aAndC;
+  when () {
+    return facts.aAndB && facts.aAndC;
   },
-  then: function() {
+  then () {
     result = true;
   }
 } ];
 
-const R = new RulesEngine(config, rules);
+const engine = new RulesEngine(rules, { asValue: true });
 
-R.execute(fact, false).
-  then(function(result) {
-    console.log(result);
-  });
+console.log(engine.execute(facts));

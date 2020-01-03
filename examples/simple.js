@@ -2,46 +2,27 @@
 
 const RulesEngine = require('../index');
 
-const config = {
-  ignoreModifications: false,
-  resultAsArray: true
-};
+const config = { result: Array };
 
-const fact = {
-  awesomeness: 0
-};
+const facts = { awesomeness: 0 };
 
 const rules = [ {
   enabled: true,
   priority: 10,
-  when: function() {
-    return fact.awesomeness >= 10;
-  },
-  then: function() {
-    fact.isAwesome = true;
+  when: () => facts.awesomeness >= 10,
+  then: () => {
+    facts.isAwesome = true;
     result.push(10);
     stop();
   }
 }, {
   enabled: true,
   priority: 10,
-  when: function() {
-    return fact.awesomeness < 100;
-  },
-  then: function() {
-    fact.awesomeness++;
-    next();
-  }
+  when: () => facts.awesomeness < 100,
+  then: () => facts.awesomeness++
 } ];
 
-const R = new RulesEngine(config, rules);
+const engine = new RulesEngine(rules, config);
 
-R.execute(fact).
-  then(function(result) {
-    console.log('execute', result);
-  });
-
-R.execute.chain([ fact, fact ], true).
-  then(function(results) {
-    console.log('chain', results);
-  });
+console.log(engine.execute(facts));
+console.log(engine.chain([ facts, facts ]));

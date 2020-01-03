@@ -2,27 +2,20 @@
 
 const RulesEngine = require('../index');
 
-const config = {
-  ignoreModifications: false
-};
-
 const john = new Map();
 john.set('year', 'three');
 
 const rules = [ {
-  when: () => (fact.get('needs a job') === true),
-  then: () => fact.set('job', 'accountant')
+  when: () => { return facts.get('needs a job') === true; },
+  then: () => { result = 'accountant'; }
 }, {
-  when: () => (fact.get('year') === 'three'),
-  then: () => fact.set('needs a job', true)
+  when: () => { return facts.get('year') === 'three'; },
+  then: () => { return facts.set('needs a job', true); }
 }, {
-  when: () => (fact.get('year') === 'three'),
-  then: () => fact.set('lives', 'on campus')
+  when: () => { return facts.get('year') === 'three'; },
+  then: () => { return facts.set('lives', 'on campus'); }
 } ];
 
-const R = new RulesEngine(config, rules);
+const engine = new RulesEngine(rules);
 
-R.execute(john).
-  then(function(result) {
-    console.log(result.fact);
-  });
+console.log(engine.execute(john));

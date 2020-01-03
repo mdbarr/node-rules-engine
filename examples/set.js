@@ -2,27 +2,20 @@
 
 const RulesEngine = require('../index');
 
-const config = {
-  ignoreModifications: false
-};
-
 const john = new Set();
 john.add('third year');
 
 const rules = [ {
-  when: () => fact.has('needs a job'),
-  then: () => fact.add('will become an accountant')
+  when: () => { return facts.has('needs a job'); },
+  then: () => { result = 'will become an accountant'; }
 }, {
-  when: () => fact.has('third year'),
-  then: () => fact.add('needs a job')
+  when: () => { return facts.has('lives on campus'); },
+  then: () => { return facts.add('needs a job'); }
 }, {
-  when: () => fact.has('third year'),
-  then: () => fact.add('lives on campus')
+  when: () => { return facts.has('third year'); },
+  then: () => { return facts.add('lives on campus'); }
 } ];
 
-const R = new RulesEngine(config, rules);
+const engine = new RulesEngine(rules);
 
-R.execute(john).
-  then(function(result) {
-    console.log(result.fact);
-  });
+console.log(engine.execute(john));
