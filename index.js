@@ -43,6 +43,10 @@ function clone (object, seen = new WeakMap()) {
   return result;
 }
 
+function asString (item) {
+  return typeof item === 'function' ? `(${ item.toString() })();` : item;
+}
+
 //////////
 
 const defaults = {
@@ -57,9 +61,29 @@ class RulesEngine {
   constructor (rules, options = {}) {
     this.config = Object.assign({}, defaults, options);
 
+    this.before = []; // before execution
+    this.beforeEach = []; // before each rule
+
+    this.after = []; // after execution
+    this.afterEach = []; // after each rule
+
     this.rules = rules.filter((item) => {
       if (item.enabled !== undefined && item.enabled !== true) {
         return false;
+      }
+
+      if (item.before) {
+        this.before.push(asString(item.before));
+      }
+      if (item.beforeEach) {
+        this.beforeEach.push(asString(item.beforeEach));
+      }
+
+      if (item.after) {
+        this.after.push(asString(item.after));
+      }
+      if (item.afterEach) {
+        this.afterEach.push(asString(item.afterEach));
       }
 
       if (!item.when || !item.then) {
@@ -70,8 +94,8 @@ class RulesEngine {
     }).map((item, index) => {
       return {
         name: item.name || `rule-${ index }`,
-        when: typeof item.when === 'function' ? `(${ item.when.toString() })();` : item.when,
-        then: typeof item.then === 'function' ? `(${ item.then.toString() })();` : item.then,
+        when: asString(item.when),
+        then: asString(item.then),
         priority: item.priority !== undefined ? item.priority : this.config.priority
       };
     }).
@@ -144,6 +168,15 @@ class RulesEngine {
       result = new Constructor();
     }
 
+    const outsideContext = vm.createContext({
+      result,
+      ... this.config.environment
+    });
+
+    this.before.forEach((before) => {
+      vm.runInContext(before, outsideContext);
+    });
+
     const sequence = [];
 
     for (let i = 0; i < this.rules.length;) {
@@ -160,6 +193,10 @@ class RulesEngine {
 
       const sandbox = vm.createContext(environment);
 
+      this.beforeEach.forEach((before) => {
+        vm.runInContext(before, sandbox);
+      });
+
       if (vm.runInContext(rule.when, sandbox)) {
         sequence.push(rule.name);
 
@@ -167,12 +204,20 @@ class RulesEngine {
         result = sandbox.result;
       }
 
+      this.afterEach.forEach((after) => {
+        vm.runInContext(after, sandbox);
+      });
+
       if (context.stop) {
         break;
       }
 
       i = context.modified && !this.config.ignoreModifications ? 0 : i + 1;
     }
+
+    this.after.forEach((after) => {
+      vm.runInContext(after, outsideContext);
+    });
 
     return this.config.asValue ? result : {
       result,
