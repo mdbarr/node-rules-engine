@@ -9,24 +9,24 @@ const facts = {
 };
 
 const rules = [ {
-  when () {
+  when: () => {
     return facts.a === facts.b;
   },
-  then () {
+  then: () => {
     facts.aAndB = true;
   }
 }, {
-  when () {
+  when: () => {
     return facts.a === facts.c;
   },
-  then () {
+  then: () => {
     facts.aAndC = true;
   }
 }, {
-  when () {
+  when: () => {
     return facts.aAndB && facts.aAndC;
   },
-  then () {
+  then: () => {
     result = true;
   }
 } ];
