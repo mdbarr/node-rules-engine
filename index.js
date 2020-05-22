@@ -31,9 +31,9 @@ function clone (object, seen = new WeakMap()) {
   if (object instanceof Buffer) {
     return result;
   } else if (object instanceof Map) {
-    object.forEach((value, key) => { return result.set(key, clone(value, seen)); });
+    object.forEach((value, key) => result.set(key, clone(value, seen)));
   } else if (object instanceof Set) {
-    object.forEach(value => { return result.add(clone(value, seen)); });
+    object.forEach(value => result.add(clone(value, seen)));
   } else {
     for (const key in object) {
       result[key] = clone(object[key], seen);
@@ -54,7 +54,7 @@ const defaults = {
   environment: {},
   ignoreModifications: false,
   priority: 100,
-  result: null
+  result: null,
 };
 
 class RulesEngine {
@@ -91,15 +91,13 @@ class RulesEngine {
       }
 
       return true;
-    }).map((item, index) => {
-      return {
-        name: item.name || `rule-${ index }`,
-        when: asString(item.when),
-        then: asString(item.then),
-        priority: item.priority !== undefined ? item.priority : this.config.priority
-      };
-    }).
-      sort((a, b) => { return a.priority - b.priority; });
+    }).map((item, index) => ({
+      name: item.name || `rule-${ index }`,
+      when: asString(item.when),
+      then: asString(item.then),
+      priority: item.priority !== undefined ? item.priority : this.config.priority,
+    })).
+      sort((a, b) => a.priority - b.priority);
   }
 
   watch (object, context) {
@@ -155,7 +153,7 @@ class RulesEngine {
 
         obj[prop] = value;
         return value;
-      }
+      },
     });
   }
 
@@ -170,7 +168,7 @@ class RulesEngine {
 
     const outsideContext = vm.createContext({
       result,
-      ... this.config.environment
+      ... this.config.environment,
     });
 
     this.before.forEach((before) => {
@@ -188,7 +186,7 @@ class RulesEngine {
         stop: () => { context.stop = true; },
         facts: this.watch(facts, context),
         result,
-        ...this.config.environment
+        ...this.config.environment,
       };
 
       const sandbox = vm.createContext(environment);
@@ -222,12 +220,12 @@ class RulesEngine {
     return this.config.asValue ? result : {
       result,
       sequence,
-      facts
+      facts,
     };
   }
 
   chain (list) {
-    return list.map(facts => { return this.execute(facts); });
+    return list.map(facts => this.execute(facts));
   }
 }
 
